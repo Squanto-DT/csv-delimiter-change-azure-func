@@ -9,7 +9,11 @@ app = func.FunctionApp()
 
 @app.route(route="process_csv", auth_level=func.AuthLevel.ANONYMOUS)
 def process_csv(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Processing CSV file.')
+    logging.info('--- NEW REQUEST RECEIVED ---')
+    
+    # Log Incoming Headers
+    headers_dict = dict(req.headers)
+    logging.info(f"Incoming Headers: {json.dumps(headers_dict, indent=2)}")
 
     try:
         file_content = None
@@ -22,9 +26,11 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
             file_content = file_item.read()
             if not req.headers.get('x-filename') and not req.params.get('filename') and file_item.filename:
                 filename = file_item.filename
+            logging.info("Input found via multipart/form-data")
         else:
             # Fallback to reading the body (could be JSON with Base64 or raw text)
             body_bytes = req.get_body()
+            logging.info(f"Raw body length: {len(body_bytes)} bytes")
             
             if body_bytes:
                 try:
@@ -35,8 +41,10 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
                     if isinstance(req_json, dict):
                         if '$content' in req_json:
                             file_content = base64.b64decode(req_json['$content'])
+                            logging.info("Input decoded from JSON Base64 wrapper ($content)")
                         elif 'file' in req_json and isinstance(req_json['file'], dict) and '$content' in req_json['file']:
                             file_content = base64.b64decode(req_json['file']['$content'])
+                            logging.info("Input decoded from JSON Base64 wrapper (file.$content)")
                             if 'filename' in req_json:
                                 filename = req_json['filename']
                 except Exception:
@@ -46,6 +54,7 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
                 # If we couldn't extract base64 from a JSON wrapper, assume the body IS the file content
                 if not file_content:
                     file_content = body_bytes
+                    logging.info("Input taken as raw byte stream fallback")
 
         if not file_content:
             headers_str = str(dict(req.headers))
@@ -53,10 +62,15 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
             debug_info = f"DEBUG INFO: Headers received: {headers_str} | Body length: {body_len} bytes. "
             if body_len > 0:
                 debug_info += f"Body snippet: {body_bytes[:100]}... "
+            logging.error(f"Failed to find file content. Debug: {debug_info}")
             return func.HttpResponse(
                 debug_info + "Please pass a CSV file in the request body, JSON structure, or as a form data 'file' field.",
                 status_code=400
             )
+
+        # Log an excerpt of the gathered file content
+        logging.info(f"Gathered File Content Length: {len(file_content)} bytes")
+        logging.info(f"Input Excerpt (first 100 chars): {file_content[:100]}")
 
         # Decode the file content (handling potential UTF-8 BOM commonly placed by Excel/Windows)
         try:
@@ -88,6 +102,10 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
             writer.writerow(row)
 
         processed_csv = f_out.getvalue()
+        
+        logging.info(f"Processed CSV Length: {len(processed_csv)} bytes")
+        logging.info(f"Output Excerpt (first 100 chars): {processed_csv[:100]}")
+        logging.info("--- REQUEST COMPLETED SUCCESSFULLY ---")
 
         # Return the processed file directly
         return func.HttpResponse(
