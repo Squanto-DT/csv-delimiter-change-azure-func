@@ -30,6 +30,17 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
         else:
             # Fallback to reading the body (could be JSON with Base64 or raw text)
             body_bytes = req.get_body()
+            
+            # WORKAROUND: In some Azure Function versions with python 3.x, when 'Transfer-Encoding: chunked' 
+            # is sent (like Power Automate does), req.get_body() can return empty. Read from the WSGI input stream directly:
+            if not body_bytes:
+                try:
+                    wsgi_stream = req._HttpRequest__params.get('wsgi.input')
+                    if wsgi_stream:
+                        body_bytes = wsgi_stream.read()
+                except Exception as e:
+                    logging.info(f"Failed to read wsgi stream: {e}")
+
             logging.info(f"Raw body length: {len(body_bytes)} bytes")
             
             if body_bytes:
