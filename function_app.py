@@ -48,8 +48,13 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
                     file_content = body_bytes
 
         if not file_content:
+            headers_str = str(dict(req.headers))
+            body_len = len(body_bytes) if 'body_bytes' in locals() and body_bytes else 0
+            debug_info = f"DEBUG INFO: Headers received: {headers_str} | Body length: {body_len} bytes. "
+            if body_len > 0:
+                debug_info += f"Body snippet: {body_bytes[:100]}... "
             return func.HttpResponse(
-                "Please pass a CSV file in the request body, JSON structure, or as a form data 'file' field.",
+                debug_info + "Please pass a CSV file in the request body, JSON structure, or as a form data 'file' field.",
                 status_code=400
             )
 
