@@ -24,22 +24,28 @@ def process_csv(req: func.HttpRequest) -> func.HttpResponse:
                 filename = file_item.filename
         else:
             # Fallback to reading the body (could be JSON with Base64 or raw text)
-            try:
-                req_json = req.get_json()
-                # Check for Power Automate file content signature
-                if isinstance(req_json, dict):
-                    if '$content' in req_json:
-                        # Sometimes base64 decoding needs padding fixes, but usually it's fine
-                        file_content = base64.b64decode(req_json['$content'])
-                    elif 'file' in req_json and isinstance(req_json['file'], dict) and '$content' in req_json['file']:
-                        file_content = base64.b64decode(req_json['file']['$content'])
-                        if 'filename' in req_json:
-                            filename = req_json['filename']
-            except ValueError:
-                pass # Not JSON
-
-            if not file_content:
-                file_content = req.get_body()
+            body_bytes = req.get_body()
+            
+            if body_bytes:
+                try:
+                    # Manually parse JSON since Power Automate might not send 'application/json' Content-Type
+                    body_str = body_bytes.decode('utf-8')
+                    req_json = json.loads(body_str)
+                    
+                    if isinstance(req_json, dict):
+                        if '$content' in req_json:
+                            file_content = base64.b64decode(req_json['$content'])
+                        elif 'file' in req_json and isinstance(req_json['file'], dict) and '$content' in req_json['file']:
+                            file_content = base64.b64decode(req_json['file']['$content'])
+                            if 'filename' in req_json:
+                                filename = req_json['filename']
+                except Exception:
+                    # If it's not JSON or decoding fails, we treat it as raw text/CSV
+                    pass
+                
+                # If we couldn't extract base64 from a JSON wrapper, assume the body IS the file content
+                if not file_content:
+                    file_content = body_bytes
 
         if not file_content:
             return func.HttpResponse(
